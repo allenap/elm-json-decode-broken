@@ -1,5 +1,6 @@
 module Json.Decode.BrokenSpec exposing
-    ( parseArray
+    ( encoding
+    , parseArray
     , parseFalse
     , parseNothing
     , parseNull
@@ -7,11 +8,11 @@ module Json.Decode.BrokenSpec exposing
     , parseObject
     , parseString
     , parseTrue
-    , querying
     )
 
 import Expect
-import Json.Decode.Broken as Json
+import Json.Decode
+import Json.Decode.Broken as Broken
 import Test exposing (..)
 
 
@@ -19,25 +20,25 @@ parseNothing : Test
 parseNothing =
     test "parse the empty string" <|
         -- Ignore the details of the error message.
-        \_ -> Json.parse "" |> Result.mapError (always Nothing) |> Expect.equal (Err Nothing)
+        \_ -> Broken.parse "" |> Result.mapError (always Nothing) |> Expect.equal (Err Nothing)
 
 
 parseNull : Test
 parseNull =
     test "parse literal 'null'" <|
-        \_ -> Json.parse "null" |> Expect.equal (Ok Json.Null)
+        \_ -> Broken.parse "null" |> Expect.equal (Ok Broken.Null)
 
 
 parseFalse : Test
 parseFalse =
     test "parse literal 'false'" <|
-        \_ -> Json.parse "false" |> Expect.equal (Ok Json.False)
+        \_ -> Broken.parse "false" |> Expect.equal (Ok Broken.False)
 
 
 parseTrue : Test
 parseTrue =
     test "parse literal 'true'" <|
-        \_ -> Json.parse "true" |> Expect.equal (Ok Json.True)
+        \_ -> Broken.parse "true" |> Expect.equal (Ok Broken.True)
 
 
 parseNumber : Test
@@ -45,42 +46,42 @@ parseNumber =
     describe "parse numbers"
         [ test "integer" <|
             \_ ->
-                Json.parse "123" |> Expect.equal (Ok <| Json.Number 123 Json.NoFrac Json.NoExp)
+                Broken.parse "123" |> Expect.equal (Ok <| Broken.Number 123 Broken.NoFrac Broken.NoExp)
         , test "integer with exponent" <|
             \_ ->
-                Json.parse "123e456"
+                Broken.parse "123e456"
                     |> Expect.equal
-                        (Ok <| Json.Number 123 Json.NoFrac (Json.Exp Json.NoSign 456))
+                        (Ok <| Broken.Number 123 Broken.NoFrac (Broken.Exp Broken.NoSign 456))
         , test "integer with plus-signed exponent" <|
             \_ ->
-                Json.parse "123e+456"
+                Broken.parse "123e+456"
                     |> Expect.equal
-                        (Ok <| Json.Number 123 Json.NoFrac (Json.Exp Json.Plus 456))
+                        (Ok <| Broken.Number 123 Broken.NoFrac (Broken.Exp Broken.Plus 456))
         , test "integer with minus-signed exponent" <|
             \_ ->
-                Json.parse "123e-456"
+                Broken.parse "123e-456"
                     |> Expect.equal
-                        (Ok <| Json.Number 123 Json.NoFrac (Json.Exp Json.Minus 456))
+                        (Ok <| Broken.Number 123 Broken.NoFrac (Broken.Exp Broken.Minus 456))
         , test "float" <|
             \_ ->
-                Json.parse "123.456"
+                Broken.parse "123.456"
                     |> Expect.equal
-                        (Ok <| Json.Number 123 (Json.Frac 456) Json.NoExp)
+                        (Ok <| Broken.Number 123 (Broken.Frac 456) Broken.NoExp)
         , test "float with exponent" <|
             \_ ->
-                Json.parse "123.456e789"
+                Broken.parse "123.456e789"
                     |> Expect.equal
-                        (Ok <| Json.Number 123 (Json.Frac 456) (Json.Exp Json.NoSign 789))
+                        (Ok <| Broken.Number 123 (Broken.Frac 456) (Broken.Exp Broken.NoSign 789))
         , test "float with plus-signed exponent" <|
             \_ ->
-                Json.parse "123.456e+789"
+                Broken.parse "123.456e+789"
                     |> Expect.equal
-                        (Ok <| Json.Number 123 (Json.Frac 456) (Json.Exp Json.Plus 789))
+                        (Ok <| Broken.Number 123 (Broken.Frac 456) (Broken.Exp Broken.Plus 789))
         , test "float with minus-signed exponent" <|
             \_ ->
-                Json.parse "123.456e-789"
+                Broken.parse "123.456e-789"
                     |> Expect.equal
-                        (Ok <| Json.Number 123 (Json.Frac 456) (Json.Exp Json.Minus 789))
+                        (Ok <| Broken.Number 123 (Broken.Frac 456) (Broken.Exp Broken.Minus 789))
         ]
 
 
@@ -89,38 +90,38 @@ parseString =
     describe "parse strings"
         [ test "simple" <|
             \_ ->
-                Json.parse "\"simple\"" |> Expect.equal (Ok <| Json.String "simple")
+                Broken.parse "\"simple\"" |> Expect.equal (Ok <| Broken.String "simple")
         , test "escape quote" <|
             \_ ->
-                Json.parse "\"\\\"\"" |> Expect.equal (Ok <| Json.String "\"")
+                Broken.parse "\"\\\"\"" |> Expect.equal (Ok <| Broken.String "\"")
         , test "escape reverse solidus (backslash)" <|
             \_ ->
-                Json.parse "\"\\\\\"" |> Expect.equal (Ok <| Json.String "\\")
+                Broken.parse "\"\\\\\"" |> Expect.equal (Ok <| Broken.String "\\")
         , test "escape solidus (forward-slash)" <|
             \_ ->
-                Json.parse "\"\\/\"" |> Expect.equal (Ok <| Json.String "/")
+                Broken.parse "\"\\/\"" |> Expect.equal (Ok <| Broken.String "/")
         , test "escape backspace" <|
             \_ ->
-                Json.parse "\"\\b\"" |> Expect.equal (Ok <| Json.String "\u{0008}")
+                Broken.parse "\"\\b\"" |> Expect.equal (Ok <| Broken.String "\u{0008}")
         , test "escape formfeed" <|
             \_ ->
-                Json.parse "\"\\f\"" |> Expect.equal (Ok <| Json.String "\u{000C}")
+                Broken.parse "\"\\f\"" |> Expect.equal (Ok <| Broken.String "\u{000C}")
         , test "escape newline" <|
             \_ ->
-                Json.parse "\"\\n\"" |> Expect.equal (Ok <| Json.String "\n")
+                Broken.parse "\"\\n\"" |> Expect.equal (Ok <| Broken.String "\n")
         , test "escape carriage return" <|
             \_ ->
-                Json.parse "\"\\r\"" |> Expect.equal (Ok <| Json.String "\u{000D}")
+                Broken.parse "\"\\r\"" |> Expect.equal (Ok <| Broken.String "\u{000D}")
         , test "escape horizontal tab" <|
             \_ ->
-                Json.parse "\"\\t\"" |> Expect.equal (Ok <| Json.String "\t")
+                Broken.parse "\"\\t\"" |> Expect.equal (Ok <| Broken.String "\t")
         , test "escape unicode" <|
             \_ ->
-                Json.parse "\"\\u0040\"" |> Expect.equal (Ok <| Json.String "@")
+                Broken.parse "\"\\u0040\"" |> Expect.equal (Ok <| Broken.String "@")
         , test "escape mixed" <|
             \_ ->
-                Json.parse "\" \\\\ \\/ \\b \\f \\n \\r \\t \\u0040 \""
-                    |> Expect.equal (Ok <| Json.String " \\ / \u{0008} \u{000C} \n \u{000D} \t @ ")
+                Broken.parse "\" \\\\ \\/ \\b \\f \\n \\r \\t \\u0040 \""
+                    |> Expect.equal (Ok <| Broken.String " \\ / \u{0008} \u{000C} \n \u{000D} \t @ ")
         ]
 
 
@@ -129,39 +130,39 @@ parseArray =
     describe "parse arrays"
         [ test "empty" <|
             \_ ->
-                Json.parse "[]" |> Expect.equal (Ok <| Json.Array [])
+                Broken.parse "[]" |> Expect.equal (Ok <| Broken.Array [])
         , test "with single element" <|
             \_ ->
-                Json.parse "[null]" |> Expect.equal (Ok <| Json.Array [ Json.Null ])
+                Broken.parse "[null]" |> Expect.equal (Ok <| Broken.Array [ Broken.Null ])
         , test "with multiple elements" <|
             \_ ->
-                Json.parse "[null, true, false, 1234, \"foo\"]"
+                Broken.parse "[null, true, false, 1234, \"foo\"]"
                     |> Expect.equal
                         (Ok <|
-                            Json.Array
-                                [ Json.Null
-                                , Json.True
-                                , Json.False
-                                , Json.Number 1234 Json.NoFrac Json.NoExp
-                                , Json.String "foo"
+                            Broken.Array
+                                [ Broken.Null
+                                , Broken.True
+                                , Broken.False
+                                , Broken.Number 1234 Broken.NoFrac Broken.NoExp
+                                , Broken.String "foo"
                                 ]
                         )
         , test "with nested values" <|
             \_ ->
-                Json.parse "[ [null, true], [false, 1234], {\"foo\": \"bar\"} ]"
+                Broken.parse "[ [null, true], [false, 1234], {\"foo\": \"bar\"} ]"
                     |> Expect.equal
                         (Ok <|
-                            Json.Array
-                                [ Json.Array
-                                    [ Json.Null
-                                    , Json.True
+                            Broken.Array
+                                [ Broken.Array
+                                    [ Broken.Null
+                                    , Broken.True
                                     ]
-                                , Json.Array
-                                    [ Json.False
-                                    , Json.Number 1234 Json.NoFrac Json.NoExp
+                                , Broken.Array
+                                    [ Broken.False
+                                    , Broken.Number 1234 Broken.NoFrac Broken.NoExp
                                     ]
-                                , Json.Object
-                                    [ ( "foo", Json.String "bar" )
+                                , Broken.Object
+                                    [ ( "foo", Broken.String "bar" )
                                     ]
                                 ]
                         )
@@ -173,97 +174,97 @@ parseObject =
     describe "parse objects"
         [ test "empty" <|
             \_ ->
-                Json.parse "{}" |> Expect.equal (Ok <| Json.Object [])
+                Broken.parse "{}" |> Expect.equal (Ok <| Broken.Object [])
         , test "with single member (object)" <|
             \_ ->
-                Json.parse "{\"foo\": {}}"
+                Broken.parse "{\"foo\": {}}"
                     |> Expect.equal
                         (Ok <|
-                            Json.Object
-                                [ ( "foo", Json.Object [] ) ]
+                            Broken.Object
+                                [ ( "foo", Broken.Object [] ) ]
                         )
         , test "with single member (array)" <|
             \_ ->
-                Json.parse "{\"foo\": []}"
+                Broken.parse "{\"foo\": []}"
                     |> Expect.equal
                         (Ok <|
-                            Json.Object
-                                [ ( "foo", Json.Array [] ) ]
+                            Broken.Object
+                                [ ( "foo", Broken.Array [] ) ]
                         )
         , test "with single member (string)" <|
             \_ ->
-                Json.parse "{\"foo\": \"bar\"}"
+                Broken.parse "{\"foo\": \"bar\"}"
                     |> Expect.equal
                         (Ok <|
-                            Json.Object
-                                [ ( "foo", Json.String "bar" ) ]
+                            Broken.Object
+                                [ ( "foo", Broken.String "bar" ) ]
                         )
         , test "with single member (number)" <|
             \_ ->
-                Json.parse "{\"foo\": 123}"
+                Broken.parse "{\"foo\": 123}"
                     |> Expect.equal
                         (Ok <|
-                            Json.Object
-                                [ ( "foo", Json.Number 123 Json.NoFrac Json.NoExp ) ]
+                            Broken.Object
+                                [ ( "foo", Broken.Number 123 Broken.NoFrac Broken.NoExp ) ]
                         )
         , test "with single member (true)" <|
             \_ ->
-                Json.parse "{\"foo\": true}"
-                    |> Expect.equal (Ok <| Json.Object [ ( "foo", Json.True ) ])
+                Broken.parse "{\"foo\": true}"
+                    |> Expect.equal (Ok <| Broken.Object [ ( "foo", Broken.True ) ])
         , test "with single member (false)" <|
             \_ ->
-                Json.parse "{\"foo\": false}"
-                    |> Expect.equal (Ok <| Json.Object [ ( "foo", Json.False ) ])
+                Broken.parse "{\"foo\": false}"
+                    |> Expect.equal (Ok <| Broken.Object [ ( "foo", Broken.False ) ])
         , test "with single member (null)" <|
             \_ ->
-                Json.parse "{\"foo\": null}"
-                    |> Expect.equal (Ok <| Json.Object [ ( "foo", Json.Null ) ])
+                Broken.parse "{\"foo\": null}"
+                    |> Expect.equal (Ok <| Broken.Object [ ( "foo", Broken.Null ) ])
         ]
 
 
-querying : Test
-querying =
+type alias Something =
+    { aaa : List String
+    , bbb : Float
+    , ccc : Bool
+    , ddd : Bool
+    , eee : ()
+    }
+
+
+encoding : Test
+encoding =
     let
         value =
-            Json.Object
-                [ ( "foo"
-                  , Json.Array
-                        [ Json.String "bar"
-                        , Json.Null
-                        ]
-                  )
-                , ( "bar", Json.True )
+            Broken.Object
+                [ ( "aaa", Broken.Array [ Broken.String "foo", Broken.String "bar" ] )
+                , ( "bbb", Broken.Number 1 (Broken.Frac 2) (Broken.Exp Broken.Plus 3) )
+                , ( "ccc", Broken.True )
+                , ( "ddd", Broken.False )
+                , ( "eee", Broken.Null )
                 ]
+
+        decoder =
+            Json.Decode.map5 Something
+                (Json.Decode.field "aaa" (Json.Decode.list Json.Decode.string))
+                (Json.Decode.field "bbb" Json.Decode.float)
+                (Json.Decode.field "ccc" Json.Decode.bool)
+                (Json.Decode.field "ddd" Json.Decode.bool)
+                (Json.Decode.field "eee" (Json.Decode.null ()))
     in
-    describe "getting values"
-        [ test "empty locator" <|
+    describe "broken to elm/json"
+        [ test "encode and decode" <|
             \_ ->
-                Json.get [] value
-                    |> Expect.equal (Just value)
-        , test "single locator" <|
-            \_ ->
-                Json.get [ Json.Key "bar" ] value
-                    |> Expect.equal (Just Json.True)
-        , test "single locator with no match" <|
-            \_ ->
-                Json.get [ Json.Key "wibble" ] value
-                    |> Expect.equal Nothing
-        , test "multiple locators" <|
-            \_ ->
-                Json.get [ Json.Key "foo", Json.Index 1 ] value
-                    |> Expect.equal (Just Json.Null)
-        , test "multiple locators with no match" <|
-            \_ ->
-                Json.get [ Json.Key "foo", Json.Index 2 ] value
-                    |> Expect.equal Nothing
-        , test "locator with mismatched type (index into object)" <|
-            \_ ->
-                Json.get [ Json.Index 0 ] value
-                    |> Expect.equal Nothing
-        , test "locators with mismatched type (key into array)" <|
-            \_ ->
-                Json.get [ Json.Key "foo", Json.Key "0" ] value
-                    |> Expect.equal Nothing
+                Broken.encode value
+                    |> Json.Decode.decodeValue decoder
+                    |> Expect.equal
+                        (Ok
+                            { aaa = [ "foo", "bar" ]
+                            , bbb = 1200
+                            , ccc = True
+                            , ddd = False
+                            , eee = ()
+                            }
+                        )
         ]
 
 

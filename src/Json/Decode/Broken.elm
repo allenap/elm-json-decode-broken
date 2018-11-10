@@ -1,8 +1,8 @@
 module Json.Decode.Broken exposing
     ( parse, Value(..)
     , json, object, array, string, number, true, false, null, ws
-    , Locator(..), get
-    , Frac(..), Exp(..), Sign(..)
+    , Frac(..), Exp(..), Sign(..), toFloat
+    , encode
     )
 
 {-| Decode broken JSON.
@@ -35,20 +35,24 @@ parser.
 @docs json, object, array, string, number, true, false, null, ws
 
 
-# Querying
-
-@docs Locator, get
-
-
 # Numbers
 
-@docs Frac, Exp, Sign
+@docs Frac, Exp, Sign, toFloat
 
 [rfc7159]: https://tools.ietf.org/html/rfc7159
 
+
+# Further processing
+
+`Value` is a bit unwieldy. Instead of trying to provide a mechanism here for
+further processing of `Value`, instead there's a single exit: `encode`. This
+will return you to the familiar world of [elm/json].
+
+@docs encode
+
 -}
 
-import List.Extra as List
+import Json.Encode as Encode
 import Parser
     exposing
         ( (|.)
@@ -87,60 +91,6 @@ type Value
     | True
     | False
     | Null
-
-
-{-| A locator for use with `get`.
--}
-type Locator
-    = Key String
-    | Index Int
-
-
-{-| Query a value for a path.
-
-This is fairly rudimentary. Any failure to follow the locators will yield
-`Nothing`, with no error messages to help diagnose.
-
-An example. Given the following JSON:
-
-    {"foo": {"bar": [123, 456, true, null]}}
-
-the following query:
-
-    get [ Key "foo", Key "bar", Index 2 ]
-
-would give:
-
-    Just True
-
-but:
-
-    get [ Key "foo", Key "bar", Index 4 ]
-
-would give:
-
-    Nothing
-
--}
-get : List Locator -> Value -> Maybe Value
-get locators subject =
-    case locators of
-        locator :: rest ->
-            case ( locator, subject ) of
-                ( Key key, Object items ) ->
-                    List.find (Tuple.first >> (==) key) items
-                        |> Maybe.map Tuple.second
-                        |> Maybe.andThen (get rest)
-
-                ( Index index, Array items ) ->
-                    List.getAt index items
-                        |> Maybe.andThen (get rest)
-
-                _ ->
-                    Nothing
-
-        [] ->
-            Just subject
 
 
 {-| Parse the given JSON string.
@@ -471,7 +421,9 @@ digitsToInt =
     String.toInt >> Maybe.withDefault 0
 
 
-toFloat : Int -> Frac -> Exp -> Maybe Float
+{-| Convert a `Number` to a `Float`.
+-}
+toFloat : Int -> Frac -> Exp -> Float
 toFloat i f e =
     let
         is =
@@ -500,8 +452,9 @@ toFloat i f e =
                     NoExp ->
                         0
     in
-    String.toFloat
-        (is ++ "." ++ fs ++ "e" ++ es)
+    (is ++ "." ++ fs ++ "e" ++ es)
+        |> String.toFloat
+        |> Maybe.withDefault (0 / 0)
 
 
 {-| Parser for JSON whitespace.
@@ -513,6 +466,46 @@ before and after JSON documents, not whitespace within quoted strings.
 ws : Parser ()
 ws =
     chompWhile (\c -> c == '\t' || c == '\n' || c == '\u{000D}' || c == ' ')
+
+
+{-| Encode a `Value` into a `Json.Encode.Value`.
+
+This can then be used with `Json.Decode.decodeValue` to populate data structures
+in a more familiar way.
+
+**Note** that this converts `Number` with fractional parts or exponents to
+`Float`. If that conversion fails, it encodes as `NaN`.
+
+-}
+encode : Value -> Encode.Value
+encode val =
+    case val of
+        Object items ->
+            Encode.object <|
+                List.map (Tuple.mapSecond encode) items
+
+        Array items ->
+            Encode.list encode items
+
+        String s ->
+            Encode.string s
+
+        Number i f e ->
+            case ( f, e ) of
+                ( NoFrac, NoExp ) ->
+                    Encode.int i
+
+                _ ->
+                    Encode.float <| toFloat i f e
+
+        True ->
+            Encode.bool (0 == 0)
+
+        False ->
+            Encode.bool (0 == 1)
+
+        Null ->
+            Encode.null
 
 
 
