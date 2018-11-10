@@ -25,7 +25,6 @@ import Parser
         , Parser
         , Step(..)
         , Trailing(..)
-        , andThen
         , chompIf
         , chompWhile
         , getChompedString
@@ -33,7 +32,6 @@ import Parser
         , loop
         , map
         , oneOf
-        , problem
         , run
         , sequence
         , succeed

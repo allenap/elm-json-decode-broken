@@ -9,8 +9,7 @@ module Json.Decode.BrokenSpec exposing
     , parseTrue
     )
 
-import Expect exposing (Expectation)
-import Fuzz exposing (Fuzzer, int, list, string)
+import Expect
 import Json.Decode.Broken as Json
 import Test exposing (..)
 
