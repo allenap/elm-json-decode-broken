@@ -1,6 +1,7 @@
 module Json.Decode.Broken exposing
     ( parse, Value(..)
     , json, object, array, string, number, true, false, null, ws
+    , Locator(..), get
     , Frac(..), Exp(..), Sign(..)
     )
 
@@ -34,6 +35,11 @@ parser.
 @docs json, object, array, string, number, true, false, null, ws
 
 
+# Querying
+
+@docs Locator, get
+
+
 # Numbers
 
 @docs Frac, Exp, Sign
@@ -42,6 +48,7 @@ parser.
 
 -}
 
+import List.Extra as List
 import Parser
     exposing
         ( (|.)
@@ -80,6 +87,60 @@ type Value
     | True
     | False
     | Null
+
+
+{-| A locator for use with `get`.
+-}
+type Locator
+    = Key String
+    | Index Int
+
+
+{-| Query a value for a path.
+
+This is fairly rudimentary. Any failure to follow the locators will yield
+`Nothing`, with no error messages to help diagnose.
+
+An example. Given the following JSON:
+
+    {"foo": {"bar": [123, 456, true, null]}}
+
+the following query:
+
+    get [ Key "foo", Key "bar", Index 2 ]
+
+would give:
+
+    Just True
+
+but:
+
+    get [ Key "foo", Key "bar", Index 4 ]
+
+would give:
+
+    Nothing
+
+-}
+get : List Locator -> Value -> Maybe Value
+get locators subject =
+    case locators of
+        locator :: rest ->
+            case ( locator, subject ) of
+                ( Key key, Object items ) ->
+                    List.find (Tuple.first >> (==) key) items
+                        |> Maybe.map Tuple.second
+                        |> Maybe.andThen (get rest)
+
+                ( Index index, Array items ) ->
+                    List.getAt index items
+                        |> Maybe.andThen (get rest)
+
+                _ ->
+                    Nothing
+
+        [] ->
+            Just subject
 
 
 {-| Parse the given JSON string.

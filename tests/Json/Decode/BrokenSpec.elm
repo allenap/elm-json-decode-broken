@@ -7,6 +7,7 @@ module Json.Decode.BrokenSpec exposing
     , parseObject
     , parseString
     , parseTrue
+    , querying
     )
 
 import Expect
@@ -217,6 +218,52 @@ parseObject =
             \_ ->
                 Json.parse "{\"foo\": null}"
                     |> Expect.equal (Ok <| Json.Object [ ( "foo", Json.Null ) ])
+        ]
+
+
+querying : Test
+querying =
+    let
+        value =
+            Json.Object
+                [ ( "foo"
+                  , Json.Array
+                        [ Json.String "bar"
+                        , Json.Null
+                        ]
+                  )
+                , ( "bar", Json.True )
+                ]
+    in
+    describe "getting values"
+        [ test "empty locator" <|
+            \_ ->
+                Json.get [] value
+                    |> Expect.equal (Just value)
+        , test "single locator" <|
+            \_ ->
+                Json.get [ Json.Key "bar" ] value
+                    |> Expect.equal (Just Json.True)
+        , test "single locator with no match" <|
+            \_ ->
+                Json.get [ Json.Key "wibble" ] value
+                    |> Expect.equal Nothing
+        , test "multiple locators" <|
+            \_ ->
+                Json.get [ Json.Key "foo", Json.Index 1 ] value
+                    |> Expect.equal (Just Json.Null)
+        , test "multiple locators with no match" <|
+            \_ ->
+                Json.get [ Json.Key "foo", Json.Index 2 ] value
+                    |> Expect.equal Nothing
+        , test "locator with mismatched type (index into object)" <|
+            \_ ->
+                Json.get [ Json.Index 0 ] value
+                    |> Expect.equal Nothing
+        , test "locators with mismatched type (key into array)" <|
+            \_ ->
+                Json.get [ Json.Key "foo", Json.Key "0" ] value
+                    |> Expect.equal Nothing
         ]
 
 
