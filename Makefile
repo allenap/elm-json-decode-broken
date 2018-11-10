@@ -11,6 +11,7 @@ test: $(elm-test)
 
 .PHONY: build
 build: $(elm)
+	@tail -c1 elm.json | read -r _ || echo >> elm.json
 	$(elm) make
 
 
