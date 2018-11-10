@@ -32,14 +32,14 @@ copy just the `string` code from this module into your project, and use the
 other parsers in this module – `object`, `array`, and so on – to compose a new
 parser.
 
+[rfc7159]: https://tools.ietf.org/html/rfc7159
+
 @docs json, object, array, string, number, true, false, null, ws
 
 
 # Numbers
 
 @docs Frac, Exp, Sign, toFloat
-
-[rfc7159]: https://tools.ietf.org/html/rfc7159
 
 
 # Further processing
@@ -48,9 +48,9 @@ parser.
 further processing of `Value`, instead there's a single exit: `encode`. This
 will return you to the familiar world of [elm/json].
 
-@docs encode
-
 [elm/json]: https://package.elm-lang.org/packages/elm/json/latest/
+
+@docs encode
 
 -}
 
