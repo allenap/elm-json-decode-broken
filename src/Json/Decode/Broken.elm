@@ -1,5 +1,6 @@
 module Json.Decode.Broken exposing
     ( parse, Value(..)
+    , json, object, array, string, number, true, false, null
     , Frac(..), Exp(..), Sign(..)
     )
 
@@ -11,9 +12,33 @@ module Json.Decode.Broken exposing
 @docs parse, Value
 
 
+# Parser building blocks
+
+A parser for a JSON _value_ is:
+
+    Parser.oneOf [ object, array, string, number, true, false, null ]
+
+According to the [specification][rfc7159], a JSON document is optional
+whitespace, a JSON value (that `oneOf …` expression above), then more optional
+whitespace – and that's what the `json` parser does. Hence parsing a compliant
+JSON document is nothing more than:
+
+    Parser.run json "…"
+
+Use these building blocks to compose a parser for broken JSON as you need. If
+you need to parse non-compliant quoted strings, for example, it might be best to
+copy just the `string` code from this module into your project, and use the
+other parsers in this module – `object`, `array`, and so on – to compose a new
+parser.
+
+@docs json, object, array, string, number, true, false, null
+
+
 # Numbers
 
 @docs Frac, Exp, Sign
+
+[rfc7159]: https://tools.ietf.org/html/rfc7159
 
 -}
 
@@ -76,6 +101,9 @@ parse =
 
 
 {-| Parser for JSON.
+
+This is a JSON value surrounded by optional whitespace.
+
 -}
 json : Parser Value
 json =
