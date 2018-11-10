@@ -1,6 +1,6 @@
 module Json.Decode.Broken exposing
     ( parse, Value(..)
-    , json, object, array, string, number, true, false, null
+    , json, object, array, string, number, true, false, null, ws
     , Frac(..), Exp(..), Sign(..)
     )
 
@@ -31,7 +31,7 @@ copy just the `string` code from this module into your project, and use the
 other parsers in this module – `object`, `array`, and so on – to compose a new
 parser.
 
-@docs json, object, array, string, number, true, false, null
+@docs json, object, array, string, number, true, false, null, ws
 
 
 # Numbers
@@ -443,6 +443,12 @@ toFloat i f e =
         (is ++ "." ++ fs ++ "e" ++ es)
 
 
+{-| Parser for JSON whitespace.
+
+This is the whitespace that appears between significant elements of JSON, and
+before and after JSON documents, not whitespace within quoted strings.
+
+-}
 ws : Parser ()
 ws =
     chompWhile (\c -> c == '\t' || c == '\n' || c == '\u{000D}' || c == ' ')
