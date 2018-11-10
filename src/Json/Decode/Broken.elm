@@ -50,6 +50,8 @@ will return you to the familiar world of [elm/json].
 
 @docs encode
 
+[elm/json]: https://package.elm-lang.org/packages/elm/json/latest/
+
 -}
 
 import Json.Encode as Encode
