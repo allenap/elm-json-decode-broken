@@ -13,7 +13,7 @@ This package will allow you to compose a custom parser that allows for weirdness
 in the JSON you have to work with. I say *will* because right now it's just a
 specification compliant parser, albeit implemented in Elm using [elm/parser][].
 There's not yet the facility for composing a custom parser, though the pieces
-are there.
+are there, and it's easier than you might imagine; credit to elm/parser.
 
 One option open to you is to take the code as it stands, copy-and-paste it into
 your project, change it to work with the broken JSON you're forced to deal with,
@@ -30,8 +30,9 @@ then you can use one of the regular JSON decoders in the Elm universe, like
 
 ## To do.
 
-- Consider switching from our own custom type to represent JSON values to
-  `JsonValue` from [json-tools/json-value][]. **Or** provide a converter.
+- Consider changing the parser to use [`Parser.Advanced`][Parser.Advanced] which
+  allows more control over errors.
 
 
 [json-tools/json-value]: https://package.elm-lang.org/packages/json-tools/json-value/latest/
+[Parser.Advanced]: https://package.elm-lang.org/packages/elm/parser/latest/Parser-Advanced

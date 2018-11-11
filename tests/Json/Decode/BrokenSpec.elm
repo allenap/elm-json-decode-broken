@@ -1,5 +1,5 @@
 module Json.Decode.BrokenSpec exposing
-    ( encoding
+    ( decodeToRecord
     , parseArray
     , parseFalse
     , parseNothing
@@ -11,9 +11,29 @@ module Json.Decode.BrokenSpec exposing
     )
 
 import Expect
-import Json.Decode
+import Fuzz
+import Json.Decode as Decode
 import Json.Decode.Broken as Broken
+import Json.Encode as Encode
+import Parser
 import Test exposing (..)
+
+
+parseAndDecode : String -> Decode.Decoder a -> Result String a
+parseAndDecode json decoder =
+    case Broken.parse json of
+        Ok value ->
+            Decode.decodeValue decoder value
+                |> Result.mapError Decode.errorToString
+
+        Err error ->
+            Err <| Debug.toString error
+
+
+parseDecodeAndEncode : String -> Result String String
+parseDecodeAndEncode json =
+    parseAndDecode json Decode.value
+        |> Result.map (Encode.encode 0)
 
 
 parseNothing : Test
@@ -26,62 +46,48 @@ parseNothing =
 parseNull : Test
 parseNull =
     test "parse literal 'null'" <|
-        \_ -> Broken.parse "null" |> Expect.equal (Ok Broken.Null)
+        \_ -> parseAndDecode "null" (Decode.null ()) |> Expect.equal (Ok ())
 
 
 parseFalse : Test
 parseFalse =
     test "parse literal 'false'" <|
-        \_ -> Broken.parse "false" |> Expect.equal (Ok Broken.False)
+        \_ -> parseAndDecode "false" Decode.bool |> Expect.equal (Ok False)
 
 
 parseTrue : Test
 parseTrue =
     test "parse literal 'true'" <|
-        \_ -> Broken.parse "true" |> Expect.equal (Ok Broken.True)
+        \_ -> parseAndDecode "true" Decode.bool |> Expect.equal (Ok True)
 
 
 parseNumber : Test
 parseNumber =
     describe "parse numbers"
-        [ test "integer" <|
-            \_ ->
-                Broken.parse "123" |> Expect.equal (Ok <| Broken.Number 123 Broken.NoFrac Broken.NoExp)
+        [ fuzz Fuzz.float "integers" <|
+            \f ->
+                parseAndDecode (String.fromFloat f) Decode.float |> Expect.equal (Ok f)
         , test "integer with exponent" <|
             \_ ->
-                Broken.parse "123e456"
-                    |> Expect.equal
-                        (Ok <| Broken.Number 123 Broken.NoFrac (Broken.Exp Broken.NoSign 456))
+                parseAndDecode "123e45" Decode.float |> Expect.equal (Ok 1.23e47)
         , test "integer with plus-signed exponent" <|
             \_ ->
-                Broken.parse "123e+456"
-                    |> Expect.equal
-                        (Ok <| Broken.Number 123 Broken.NoFrac (Broken.Exp Broken.Plus 456))
+                parseAndDecode "123e+45" Decode.float |> Expect.equal (Ok 1.23e47)
         , test "integer with minus-signed exponent" <|
             \_ ->
-                Broken.parse "123e-456"
-                    |> Expect.equal
-                        (Ok <| Broken.Number 123 Broken.NoFrac (Broken.Exp Broken.Minus 456))
+                parseAndDecode "123e-45" Decode.float |> Expect.equal (Ok 1.23e-43)
         , test "float" <|
             \_ ->
-                Broken.parse "123.456"
-                    |> Expect.equal
-                        (Ok <| Broken.Number 123 (Broken.Frac 456) Broken.NoExp)
+                parseAndDecode "123.456" Decode.float |> Expect.equal (Ok 123.456)
         , test "float with exponent" <|
             \_ ->
-                Broken.parse "123.456e789"
-                    |> Expect.equal
-                        (Ok <| Broken.Number 123 (Broken.Frac 456) (Broken.Exp Broken.NoSign 789))
+                parseAndDecode "123.456e78" Decode.float |> Expect.equal (Ok 1.23456e80)
         , test "float with plus-signed exponent" <|
             \_ ->
-                Broken.parse "123.456e+789"
-                    |> Expect.equal
-                        (Ok <| Broken.Number 123 (Broken.Frac 456) (Broken.Exp Broken.Plus 789))
+                parseAndDecode "123.456e+78" Decode.float |> Expect.equal (Ok 1.23456e80)
         , test "float with minus-signed exponent" <|
             \_ ->
-                Broken.parse "123.456e-789"
-                    |> Expect.equal
-                        (Ok <| Broken.Number 123 (Broken.Frac 456) (Broken.Exp Broken.Minus 789))
+                parseAndDecode "123.456e-78" Decode.float |> Expect.equal (Ok 1.23456e-76)
         ]
 
 
@@ -90,38 +96,38 @@ parseString =
     describe "parse strings"
         [ test "simple" <|
             \_ ->
-                Broken.parse "\"simple\"" |> Expect.equal (Ok <| Broken.String "simple")
+                parseAndDecode "\"simple\"" Decode.string |> Expect.equal (Ok "simple")
         , test "escape quote" <|
             \_ ->
-                Broken.parse "\"\\\"\"" |> Expect.equal (Ok <| Broken.String "\"")
+                parseAndDecode "\"\\\"\"" Decode.string |> Expect.equal (Ok "\"")
         , test "escape reverse solidus (backslash)" <|
             \_ ->
-                Broken.parse "\"\\\\\"" |> Expect.equal (Ok <| Broken.String "\\")
+                parseAndDecode "\"\\\\\"" Decode.string |> Expect.equal (Ok "\\")
         , test "escape solidus (forward-slash)" <|
             \_ ->
-                Broken.parse "\"\\/\"" |> Expect.equal (Ok <| Broken.String "/")
+                parseAndDecode "\"\\/\"" Decode.string |> Expect.equal (Ok "/")
         , test "escape backspace" <|
             \_ ->
-                Broken.parse "\"\\b\"" |> Expect.equal (Ok <| Broken.String "\u{0008}")
+                parseAndDecode "\"\\b\"" Decode.string |> Expect.equal (Ok "\u{0008}")
         , test "escape formfeed" <|
             \_ ->
-                Broken.parse "\"\\f\"" |> Expect.equal (Ok <| Broken.String "\u{000C}")
+                parseAndDecode "\"\\f\"" Decode.string |> Expect.equal (Ok "\u{000C}")
         , test "escape newline" <|
             \_ ->
-                Broken.parse "\"\\n\"" |> Expect.equal (Ok <| Broken.String "\n")
+                parseAndDecode "\"\\n\"" Decode.string |> Expect.equal (Ok "\n")
         , test "escape carriage return" <|
             \_ ->
-                Broken.parse "\"\\r\"" |> Expect.equal (Ok <| Broken.String "\u{000D}")
+                parseAndDecode "\"\\r\"" Decode.string |> Expect.equal (Ok "\u{000D}")
         , test "escape horizontal tab" <|
             \_ ->
-                Broken.parse "\"\\t\"" |> Expect.equal (Ok <| Broken.String "\t")
+                parseAndDecode "\"\\t\"" Decode.string |> Expect.equal (Ok "\t")
         , test "escape unicode" <|
             \_ ->
-                Broken.parse "\"\\u0040\"" |> Expect.equal (Ok <| Broken.String "@")
+                parseAndDecode "\"\\u0040\"" Decode.string |> Expect.equal (Ok "@")
         , test "escape mixed" <|
             \_ ->
-                Broken.parse "\" \\\\ \\/ \\b \\f \\n \\r \\t \\u0040 \""
-                    |> Expect.equal (Ok <| Broken.String " \\ / \u{0008} \u{000C} \n \u{000D} \t @ ")
+                parseAndDecode "\" \\\\ \\/ \\b \\f \\n \\r \\t \\u0040 \"" Decode.string
+                    |> Expect.equal (Ok " \\ / \u{0008} \u{000C} \n \u{000D} \t @ ")
         ]
 
 
@@ -130,42 +136,27 @@ parseArray =
     describe "parse arrays"
         [ test "empty" <|
             \_ ->
-                Broken.parse "[]" |> Expect.equal (Ok <| Broken.Array [])
+                parseAndDecode "[]" (Decode.list Decode.value) |> Expect.equal (Ok [])
         , test "with single element" <|
             \_ ->
-                Broken.parse "[null]" |> Expect.equal (Ok <| Broken.Array [ Broken.Null ])
+                parseAndDecode "[null]" (Decode.list <| Decode.null ()) |> Expect.equal (Ok [ () ])
         , test "with multiple elements" <|
             \_ ->
-                Broken.parse "[null, true, false, 1234, \"foo\"]"
+                parseAndDecode "[null, true, false, 1234, \"foo\"]" (Decode.list Decode.value)
+                    |> Result.map (List.map (Encode.encode 2))
                     |> Expect.equal
-                        (Ok <|
-                            Broken.Array
-                                [ Broken.Null
-                                , Broken.True
-                                , Broken.False
-                                , Broken.Number 1234 Broken.NoFrac Broken.NoExp
-                                , Broken.String "foo"
-                                ]
+                        (Ok
+                            [ "null"
+                            , "true"
+                            , "false"
+                            , "1234"
+                            , "\"foo\""
+                            ]
                         )
         , test "with nested values" <|
             \_ ->
-                Broken.parse "[ [null, true], [false, 1234], {\"foo\": \"bar\"} ]"
-                    |> Expect.equal
-                        (Ok <|
-                            Broken.Array
-                                [ Broken.Array
-                                    [ Broken.Null
-                                    , Broken.True
-                                    ]
-                                , Broken.Array
-                                    [ Broken.False
-                                    , Broken.Number 1234 Broken.NoFrac Broken.NoExp
-                                    ]
-                                , Broken.Object
-                                    [ ( "foo", Broken.String "bar" )
-                                    ]
-                                ]
-                        )
+                parseDecodeAndEncode "[ [null, true], [false, 1234], {\"foo\": \"bar\"} ]"
+                    |> Expect.equal (Ok "[[null,true],[false,1234],{\"foo\":\"bar\"}]")
         ]
 
 
@@ -174,55 +165,40 @@ parseObject =
     describe "parse objects"
         [ test "empty" <|
             \_ ->
-                Broken.parse "{}" |> Expect.equal (Ok <| Broken.Object [])
+                parseDecodeAndEncode "{   }"
+                    |> Expect.equal (Ok "{}")
         , test "with single member (object)" <|
             \_ ->
-                Broken.parse "{\"foo\": {}}"
-                    |> Expect.equal
-                        (Ok <|
-                            Broken.Object
-                                [ ( "foo", Broken.Object [] ) ]
-                        )
+                parseDecodeAndEncode "{ \"foo\" : {} }"
+                    |> Expect.equal (Ok "{\"foo\":{}}")
         , test "with single member (array)" <|
             \_ ->
-                Broken.parse "{\"foo\": []}"
-                    |> Expect.equal
-                        (Ok <|
-                            Broken.Object
-                                [ ( "foo", Broken.Array [] ) ]
-                        )
+                parseDecodeAndEncode "{ \"foo\" : [] }"
+                    |> Expect.equal (Ok "{\"foo\":[]}")
         , test "with single member (string)" <|
             \_ ->
-                Broken.parse "{\"foo\": \"bar\"}"
-                    |> Expect.equal
-                        (Ok <|
-                            Broken.Object
-                                [ ( "foo", Broken.String "bar" ) ]
-                        )
+                parseDecodeAndEncode "{\"foo\" :\"bar\"}"
+                    |> Expect.equal (Ok "{\"foo\":\"bar\"}")
         , test "with single member (number)" <|
             \_ ->
-                Broken.parse "{\"foo\": 123}"
-                    |> Expect.equal
-                        (Ok <|
-                            Broken.Object
-                                [ ( "foo", Broken.Number 123 Broken.NoFrac Broken.NoExp ) ]
-                        )
+                parseDecodeAndEncode "{\"foo\" \u{000D}: \t 123\n}"
+                    |> Expect.equal (Ok "{\"foo\":123}")
         , test "with single member (true)" <|
             \_ ->
-                Broken.parse "{\"foo\": true}"
-                    |> Expect.equal (Ok <| Broken.Object [ ( "foo", Broken.True ) ])
+                parseDecodeAndEncode "{\"foo\": true}"
+                    |> Expect.equal (Ok "{\"foo\":true}")
         , test "with single member (false)" <|
             \_ ->
-                Broken.parse "{\"foo\": false}"
-                    |> Expect.equal (Ok <| Broken.Object [ ( "foo", Broken.False ) ])
+                parseDecodeAndEncode "{\"foo\": false}"
+                    |> Expect.equal (Ok "{\"foo\":false}")
         , test "with single member (null)" <|
             \_ ->
-                Broken.parse "{\"foo\": null}"
-                    |> Expect.equal (Ok <| Broken.Object [ ( "foo", Broken.Null ) ])
+                parseDecodeAndEncode "{\"foo\": null}"
+                    |> Expect.equal (Ok "{\"foo\":null}")
         ]
 
 
-type alias Something =
+type alias Record =
     { aaa : List String
     , bbb : Float
     , ccc : Bool
@@ -231,41 +207,33 @@ type alias Something =
     }
 
 
-encoding : Test
-encoding =
+decodeToRecord : Test
+decodeToRecord =
     let
-        value =
-            Broken.Object
-                [ ( "aaa", Broken.Array [ Broken.String "foo", Broken.String "bar" ] )
-                , ( "bbb", Broken.Number 1 (Broken.Frac 2) (Broken.Exp Broken.Plus 3) )
-                , ( "ccc", Broken.True )
-                , ( "ddd", Broken.False )
-                , ( "eee", Broken.Null )
-                ]
+        json =
+            "{\"aaa\" : [ \"foo\", \"bar\" ] , \"bbb\" : 12.3e4 , "
+                ++ "\"ccc\": true , \"ddd\"   :false , \"eee\" : null }"
 
         decoder =
-            Json.Decode.map5 Something
-                (Json.Decode.field "aaa" (Json.Decode.list Json.Decode.string))
-                (Json.Decode.field "bbb" Json.Decode.float)
-                (Json.Decode.field "ccc" Json.Decode.bool)
-                (Json.Decode.field "ddd" Json.Decode.bool)
-                (Json.Decode.field "eee" (Json.Decode.null ()))
+            Decode.map5 Record
+                (Decode.field "aaa" (Decode.list Decode.string))
+                (Decode.field "bbb" Decode.float)
+                (Decode.field "ccc" Decode.bool)
+                (Decode.field "ddd" Decode.bool)
+                (Decode.field "eee" (Decode.null ()))
     in
-    describe "broken to elm/json"
-        [ test "encode and decode" <|
-            \_ ->
-                Broken.encode value
-                    |> Json.Decode.decodeValue decoder
-                    |> Expect.equal
-                        (Ok
-                            { aaa = [ "foo", "bar" ]
-                            , bbb = 1200
-                            , ccc = True
-                            , ddd = False
-                            , eee = ()
-                            }
-                        )
-        ]
+    test "decode to an Elm record" <|
+        \_ ->
+            parseAndDecode json decoder
+                |> Expect.equal
+                    (Ok
+                        { aaa = [ "foo", "bar" ]
+                        , bbb = 123000
+                        , ccc = True
+                        , ddd = False
+                        , eee = ()
+                        }
+                    )
 
 
 

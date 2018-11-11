@@ -1,16 +1,18 @@
 module Json.Decode.Broken exposing
-    ( parse, Value(..)
+    ( parse
     , json, object, array, string, number, true, false, null, ws
-    , Frac(..), Exp(..), Sign(..), toFloat
-    , encode
     )
 
-{-| Decode broken JSON.
+{-| Parse/decode broken JSON.
 
 
 # Parsing
 
-@docs parse, Value
+When successful, parsing returns a `Json.Encode.Value`. Use with with
+`Json.Decode.decodeValue` to extract the information you need into your
+application's data structures.
+
+@docs parse
 
 
 # Parser building blocks
@@ -36,25 +38,9 @@ parser.
 
 @docs json, object, array, string, number, true, false, null, ws
 
-
-# Numbers
-
-@docs Frac, Exp, Sign, toFloat
-
-
-# Further processing
-
-`Value` is a bit unwieldy. Instead of trying to provide a mechanism here for
-further processing of `Value`, instead there's a single exit: `encode`. This
-will return you to the familiar world of [elm/json].
-
-[elm/json]: https://package.elm-lang.org/packages/elm/json/latest/
-
-@docs encode
-
 -}
 
-import Json.Encode as Encode
+import Json.Encode as Encode exposing (Value)
 import Parser
     exposing
         ( (|.)
@@ -78,28 +64,14 @@ import Parser
         )
 
 
-{-| Custom type for JSON values.
-
-Mostly this is self-explanatory, but numbers might be interesting because no
-effort is made to convert them to `Float` values. This means you can deal with
-overflows or precision mismatches in broken JSON.
-
--}
-type Value
-    = Object (List ( String, Value ))
-    | Array (List Value)
-    | String String
-    | Number Int Frac Exp
-    | True
-    | False
-    | Null
-
-
 {-| Parse the given JSON string.
 
-Errors come straight from [elm/parser] and may not be super useful. It may be
-worth changing this parser to use elm/parser's `Parser.Advanced` which allows
-more control over errors.
+This assumes a spec-compliant JSON string; it will choke on "broken" JSON. This
+seems kind of weird for a package that's all about parsing broken JSON. However,
+we all have to start somewhere. Read the code, copy it, modify it, make it work
+for your use case.
+
+Errors come straight from [elm/parser] and may not be super useful. Sorry.
 
 [elm/parser]: https://package.elm-lang.org/packages/elm/parser/latest/
 
@@ -150,28 +122,28 @@ yields =
 -}
 true : Parser Value
 true =
-    token "true" |> yields True
+    token "true" |> yields (Encode.bool True)
 
 
 {-| Parser for a JSON 'false' literal.
 -}
 false : Parser Value
 false =
-    token "false" |> yields False
+    token "false" |> yields (Encode.bool False)
 
 
 {-| Parser for a JSON 'null' literal.
 -}
 null : Parser Value
 null =
-    token "null" |> yields Null
+    token "null" |> yields Encode.null
 
 
 {-| Parser for a JSON object.
 -}
 object : Parser Value
 object =
-    succeed Object
+    succeed Encode.object
         |= sequence
             { start = "{"
             , separator = ","
@@ -196,7 +168,7 @@ member =
 -}
 array : Parser Value
 array =
-    succeed Array
+    succeed (Encode.list identity)
         |= sequence
             { start = "["
             , separator = ","
@@ -215,7 +187,7 @@ array =
 -}
 string : Parser Value
 string =
-    map String stringRaw
+    map Encode.string stringRaw
 
 
 stringRaw : Parser String
@@ -317,30 +289,34 @@ unescaped =
 -}
 number : Parser Value
 number =
-    succeed Number
-        |= int
-        |= frac
-        |= exp
+    map Encode.float <|
+        succeed toFloat
+            |= int
+            |= frac
+            |= exp
 
 
-int : Parser Int
+int : Parser String
 int =
-    map digitsToInt <|
-        getChompedString <|
+    let
+        integer : Parser ()
+        integer =
             oneOf
                 [ succeed ()
-                    |. onenine
-                    |. digits
+                    |. oneNine
+                    |. digitsMaybe
                 , succeed ()
-                    |. digit
-                , succeed ()
-                    |. symbol "-"
-                    |. onenine
-                    |. digits
-                , succeed ()
-                    |. symbol "-"
-                    |. digit
+                    |. zero
                 ]
+
+        integerNegative : Parser ()
+        integerNegative =
+            succeed ()
+                |. symbol "-"
+                |. integer
+    in
+    getChompedString <|
+        oneOf [ integer, integerNegative ]
 
 
 digits : Parser ()
@@ -350,13 +326,23 @@ digits =
         |. chompWhile Char.isDigit
 
 
+digitsMaybe : Parser ()
+digitsMaybe =
+    chompWhile Char.isDigit
+
+
 digit : Parser ()
 digit =
     chompIf Char.isDigit
 
 
-onenine : Parser ()
-onenine =
+zero : Parser ()
+zero =
+    chompIf ((==) '0')
+
+
+oneNine : Parser ()
+oneNine =
     chompIf (Char.toCode >> (\c -> c >= 0x31 && c <= 0x39))
 
 
@@ -366,7 +352,7 @@ i.e. the optional part after the decimal point.
 
 -}
 type Frac
-    = Frac Int
+    = Frac String
     | NoFrac
 
 
@@ -375,7 +361,7 @@ frac =
     oneOf
         [ succeed Frac
             |. symbol "."
-            |= map digitsToInt (getChompedString digits)
+            |= getChompedString digits
         , succeed NoFrac
         ]
 
@@ -386,7 +372,7 @@ i.e. an optional suffix starting with `e` or `E` in the number.
 
 -}
 type Exp
-    = Exp Sign Int
+    = Exp Sign String
     | NoExp
 
 
@@ -396,7 +382,7 @@ exp =
         [ succeed Exp
             |. oneOf [ symbol "e", symbol "E" ]
             |= sign
-            |= map digitsToInt (getChompedString digits)
+            |= getChompedString digits
         , succeed NoExp
         ]
 
@@ -412,49 +398,39 @@ type Sign
 sign : Parser Sign
 sign =
     oneOf
-        [ symbol "+" |> map (\_ -> Plus)
-        , symbol "-" |> map (\_ -> Minus)
+        [ symbol "+" |> yields Plus
+        , symbol "-" |> yields Minus
         , succeed NoSign
         ]
 
 
-digitsToInt : String -> Int
-digitsToInt =
-    String.toInt >> Maybe.withDefault 0
-
-
-{-| Convert a `Number` to a `Float`.
+{-| Convert components of a JSON number into a `Float`.
 -}
-toFloat : Int -> Frac -> Exp -> Float
-toFloat i f e =
+toFloat : String -> Frac -> Exp -> Float
+toFloat is f e =
     let
-        is =
-            String.fromInt i
-
         fs =
-            String.fromInt <|
-                case f of
-                    Frac f_ ->
-                        f_
+            case f of
+                Frac f_ ->
+                    "." ++ f_
 
-                    NoFrac ->
-                        0
+                NoFrac ->
+                    ""
 
         es =
-            String.fromInt <|
-                case e of
-                    Exp s_ e_ ->
-                        case s_ of
-                            Minus ->
-                                negate e_
+            case e of
+                Exp s_ e_ ->
+                    case s_ of
+                        Minus ->
+                            "e-" ++ e_
 
-                            _ ->
-                                e_
+                        _ ->
+                            "e" ++ e_
 
-                    NoExp ->
-                        0
+                NoExp ->
+                    ""
     in
-    (is ++ "." ++ fs ++ "e" ++ es)
+    (is ++ fs ++ es)
         |> String.toFloat
         |> Maybe.withDefault (0 / 0)
 
@@ -468,46 +444,6 @@ before and after JSON documents, not whitespace within quoted strings.
 ws : Parser ()
 ws =
     chompWhile (\c -> c == '\t' || c == '\n' || c == '\u{000D}' || c == ' ')
-
-
-{-| Encode a `Value` into a `Json.Encode.Value`.
-
-This can then be used with `Json.Decode.decodeValue` to populate data structures
-in a more familiar way.
-
-**Note** that this converts `Number` with fractional parts or exponents to
-`Float`. If that conversion fails, it encodes as `NaN`.
-
--}
-encode : Value -> Encode.Value
-encode val =
-    case val of
-        Object items ->
-            Encode.object <|
-                List.map (Tuple.mapSecond encode) items
-
-        Array items ->
-            Encode.list encode items
-
-        String s ->
-            Encode.string s
-
-        Number i f e ->
-            case ( f, e ) of
-                ( NoFrac, NoExp ) ->
-                    Encode.int i
-
-                _ ->
-                    Encode.float <| toFloat i f e
-
-        True ->
-            Encode.bool (0 == 0)
-
-        False ->
-            Encode.bool (0 == 1)
-
-        Null ->
-            Encode.null
 
 
 
