@@ -49,6 +49,7 @@ import Parser
         , Parser
         , Step(..)
         , Trailing(..)
+        , andThen
         , chompIf
         , chompWhile
         , getChompedString
@@ -56,6 +57,7 @@ import Parser
         , loop
         , map
         , oneOf
+        , problem
         , run
         , sequence
         , succeed
@@ -289,11 +291,22 @@ unescaped =
 -}
 number : Parser Value
 number =
+    let
+        toFloat s =
+            case String.toFloat s of
+                Just f ->
+                    succeed f
+
+                Nothing ->
+                    problem ("could not convert " ++ s ++ " to Float")
+    in
     map Encode.float <|
-        succeed toFloat
-            |= int
-            |= frac
-            |= exp
+        andThen toFloat <|
+            getChompedString <|
+                succeed ()
+                    |. int
+                    |. frac
+                    |. exp
 
 
 int : Parser String
@@ -346,93 +359,34 @@ oneNine =
     chompIf (Char.toCode >> (\c -> c >= 0x31 && c <= 0x39))
 
 
-{-| Does the number have a fractional component?
-
-i.e. the optional part after the decimal point.
-
--}
-type Frac
-    = Frac String
-    | NoFrac
-
-
-frac : Parser Frac
+frac : Parser ()
 frac =
     oneOf
-        [ succeed Frac
+        [ succeed ()
             |. symbol "."
-            |= getChompedString digits
-        , succeed NoFrac
+            |. digits
+        , succeed ()
         ]
 
 
-{-| Does the number have an exponent?
-
-i.e. an optional suffix starting with `e` or `E` in the number.
-
--}
-type Exp
-    = Exp Sign String
-    | NoExp
-
-
-exp : Parser Exp
+exp : Parser ()
 exp =
     oneOf
-        [ succeed Exp
+        [ succeed ()
             |. oneOf [ symbol "e", symbol "E" ]
-            |= sign
-            |= getChompedString digits
-        , succeed NoExp
+            |. sign
+            |. digits
+        , succeed ()
         ]
 
 
-{-| The sign of the exponent.
--}
-type Sign
-    = Plus
-    | Minus
-    | NoSign
-
-
-sign : Parser Sign
+sign : Parser ()
 sign =
     oneOf
-        [ symbol "+" |> yields Plus
-        , symbol "-" |> yields Minus
-        , succeed NoSign
+        [ symbol "+"
+        , symbol "-"
+        , succeed ()
         ]
-
-
-{-| Convert components of a JSON number into a `Float`.
--}
-toFloat : String -> Frac -> Exp -> Float
-toFloat is f e =
-    let
-        fs =
-            case f of
-                Frac f_ ->
-                    "." ++ f_
-
-                NoFrac ->
-                    ""
-
-        es =
-            case e of
-                Exp s_ e_ ->
-                    case s_ of
-                        Minus ->
-                            "e-" ++ e_
-
-                        _ ->
-                            "e" ++ e_
-
-                NoExp ->
-                    ""
-    in
-    (is ++ fs ++ es)
-        |> String.toFloat
-        |> Maybe.withDefault (0 / 0)
 
 
 {-| Parser for JSON whitespace.
