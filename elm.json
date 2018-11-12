@@ -3,7 +3,7 @@
     "name": "allenap/elm-json-decode-broken",
     "summary": "Decode broken JSON",
     "license": "MIT",
-    "version": "2.0.0",
+    "version": "2.0.1",
     "exposed-modules": [
         "Json.Decode.Broken"
     ],
