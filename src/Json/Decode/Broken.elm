@@ -1,9 +1,22 @@
 module Json.Decode.Broken exposing
     ( parse
-    , json, object, array, string, number, true, false, null, ws
+    , json
+    , object, objectMember
+    , array
+    , string, stringRaw, escape, unicodeHexCode, unescaped
+    , number, int, frac, exp, digit, digits, digitsMaybe, zero, oneNine
+    , true, false, null, ws
+    , hexChar, sign, yields
     )
 
 {-| Parse/decode broken JSON.
+
+When reading these docs or the code in this module, it might be useful to refer
+to [json.org] (for the diagrams) or [RFC 8259] (for the official word). The
+diagrams especially.
+
+[json.org]: https://json.org/
+[RFC 8259]: https://tools.ietf.org/html/rfc8259
 
 
 # Parsing
@@ -15,28 +28,60 @@ application's data structures.
 @docs parse
 
 
-# Parser building blocks
+# Top-level parsers
 
 A parser for a JSON _value_ is:
 
     Parser.oneOf [ object, array, string, number, true, false, null ]
 
-According to the [specification][rfc7159], a JSON document is optional
+According to the [specification][rfc7159], a JSON document is: optional
 whitespace, a JSON value (that `oneOf …` expression above), then more optional
-whitespace – and that's what the `json` parser does. Hence parsing a compliant
-JSON document is nothing more than:
+whitespace. That's what the `json` parser does. Hence parsing a compliant JSON
+document is:
 
     Parser.run json "…"
 
-Use these building blocks to compose a parser for broken JSON as you need. If
-you need to parse non-compliant quoted strings, for example, it might be best to
-copy just the `string` code from this module into your project, and use the
-other parsers in this module – `object`, `array`, and so on – to compose a new
-parser.
+The component parsers are also exposed. Use them as building blocks to compose a
+parser for broken JSON as you need. If you need to parse non-compliant quoted
+strings, for example, it might be best to copy just the `string` code from this
+module into your project, and use the other parsers in this module – `object`,
+`array`, and so on – to compose a new parser.
+
+For now the only exposed top-level parser is `json`.
 
 [rfc7159]: https://tools.ietf.org/html/rfc7159
 
-@docs json, object, array, string, number, true, false, null, ws
+@docs json
+
+
+# Parsers for objects
+
+@docs object, objectMember
+
+
+# Parsers for arrays
+
+@docs array
+
+
+# Parsers for strings
+
+@docs string, stringRaw, escape, unicodeHexCode, unescaped
+
+
+# Parsers for numbers
+
+@docs number, int, frac, exp, digit, digits, digitsMaybe, zero, oneNine
+
+
+# Parsers for the others
+
+@docs true, false, null, ws
+
+
+# Other functions
+
+@ hexChar, yields
 
 -}
 
@@ -83,10 +128,6 @@ parse =
     run json
 
 
-
--- Many of the names below mirror those from https://json.org/.
-
-
 {-| Parser for JSON.
 
 This is a JSON value surrounded by optional whitespace.
@@ -115,6 +156,15 @@ value =
         ]
 
 
+{-| Parser that, on succees, always returns `a`
+
+For example:
+
+    token "true" |> yields (Encode.bool True)
+
+When the token "true" is matched, a boolean true value is yielded
+
+-}
 yields : a -> Parser b -> Parser a
 yields =
     always >> map
@@ -151,13 +201,18 @@ object =
             , separator = ","
             , end = "}"
             , spaces = ws
-            , item = member
+            , item = objectMember
             , trailing = Forbidden
             }
 
 
-member : Parser ( String, Value )
-member =
+{-| Parser for a JSON object _member_.
+
+Corresponds to the `member` production in the specifications.
+
+-}
+objectMember : Parser ( String, Value )
+objectMember =
     succeed Tuple.pair
         |= stringRaw
         |. ws
@@ -192,6 +247,12 @@ string =
     map Encode.string stringRaw
 
 
+{-| Parser for a quoted JSON string.
+
+The difference here is that this yields the actual `String` rather than a
+re-encoded `Value`.
+
+-}
 stringRaw : Parser String
 stringRaw =
     succeed identity
@@ -219,6 +280,11 @@ stringHelp revChunks =
         ]
 
 
+{-| Parser for an escape sequence.
+
+This does **not** include the leading escape prefix, i.e. `\\`.
+
+-}
 escape : Parser Char
 escape =
     oneOf
@@ -236,21 +302,37 @@ escape =
         ]
 
 
+{-| Parser for a Unicode hexadecimal code.
+
+E.g. "AbCd" or "1234" or "000D".
+
+It will match exactly 4 hex digits, case-insensitive.
+
+Goes well with [`hexChar`](#hexChar).
+
+-}
 unicodeHexCode : Parser String
 unicodeHexCode =
     getChompedString <|
         succeed ()
-            |. hexDigit
-            |. hexDigit
-            |. hexDigit
-            |. hexDigit
+            |. chompIf Char.isHexDigit
+            |. chompIf Char.isHexDigit
+            |. chompIf Char.isHexDigit
+            |. chompIf Char.isHexDigit
 
 
+{-| Convert a Unicode hexadecimal code to a `Char`.
+
+Useful with [`unicodeHexCode`](#unicodeHexCode).
+
+Note that ECMA 404 does not put a limit on the character ranges, i.e. it is
+permissible in JSON to specify a character for which Unicode does not have a
+character assignment. This leans on the behaviour of `Char.fromCode` to
+determine what happens for codes not covered by Unicode.
+
+-}
 hexChar : String -> Char
 hexChar =
-    -- ECMA 404 does not put a limit on the character ranges, i.e. it is
-    -- possible to specify a character for which Unicode does not have a
-    -- character assignment.
     String.foldl hexAcc 0 >> Char.fromCode
 
 
@@ -270,11 +352,13 @@ hexAcc char total =
         16 * total + (10 + code - 0x61)
 
 
-hexDigit : Parser ()
-hexDigit =
-    chompIf Char.isHexDigit
+{-| Parser for unescaped string contents.
 
+The JSON specifications are specific about what characters are permissible in a
+quoted string. Perhaps most interestingly, horizontal tabs, new-lines, and
+carriage returns are **not** permitted; these **must** be escaped.
 
+-}
 unescaped : Parser String
 unescaped =
     let
@@ -309,6 +393,12 @@ number =
                     |. exp
 
 
+{-| Parser for the integer portion of a JSON number.
+
+    123.456e+78
+    ^^^
+
+-}
 int : Parser String
 int =
     let
@@ -332,6 +422,12 @@ int =
         oneOf [ integer, integerNegative ]
 
 
+{-| Parser for one or more decimal digits.
+
+This chomps characters; it does not yield them. Wrap with `getChompedString` to
+obtain the matched string.
+
+-}
 digits : Parser ()
 digits =
     succeed ()
@@ -339,26 +435,40 @@ digits =
         |. chompWhile Char.isDigit
 
 
+{-| Parser for _zero_ or more decimal digits.
+-}
 digitsMaybe : Parser ()
 digitsMaybe =
     chompWhile Char.isDigit
 
 
+{-| Parser for a single decimal digit.
+-}
 digit : Parser ()
 digit =
     chompIf Char.isDigit
 
 
+{-| Parser for a single decimal zero digit, `0`.
+-}
 zero : Parser ()
 zero =
     chompIf ((==) '0')
 
 
+{-| Parser for a single decimal digit between `1` and `9` inclusive.
+-}
 oneNine : Parser ()
 oneNine =
     chompIf (Char.toCode >> (\c -> c >= 0x31 && c <= 0x39))
 
 
+{-| Parser for an optional fractional portion of a JSON number.
+
+    123.456e+78
+       ^^^^
+
+-}
 frac : Parser ()
 frac =
     oneOf
@@ -369,6 +479,12 @@ frac =
         ]
 
 
+{-| Parser for an optional exponent portion of a JSON number.
+
+    123.456e+78
+           ^^^^
+
+-}
 exp : Parser ()
 exp =
     oneOf
