@@ -1,12 +1,13 @@
 module Json.Decode.Broken exposing
     ( parse
+    , parseWith, Config(..), defaultConfig
     , json
-    , object, objectMember
+    , object, key
     , array
-    , string, stringRaw, escape, unicodeHexCode, unescaped
+    , string, stringLiteral, escape, unicodeHexCode, unescaped
     , number, int, frac, exp, digit, digits, digitsMaybe, zero, oneNine
     , true, false, null, ws
-    , hexChar, sign, yields
+    , hexChar, yields
     )
 
 {-| Parse/decode broken JSON.
@@ -28,6 +29,17 @@ application's data structures.
 @docs parse
 
 
+# Custom parsing
+
+This isn't going to get you total flexibility, but using [`Config`](#Config) and
+co. will at least help you put together a consistent parser for JSON-like data.
+By consistent, I mean that you override, say, the number parser and it will be
+applied everywhere you might expect to see a number, be that at the top level,
+or nested within any depths of objects or arrays.
+
+@docs parseWith, Config, defaultConfig
+
+
 # Top-level parsers
 
 A parser for a JSON _value_ is:
@@ -36,18 +48,18 @@ A parser for a JSON _value_ is:
 
 According to the [specification][rfc7159], a JSON document is: optional
 whitespace, a JSON value (that `oneOf …` expression above), then more optional
-whitespace. That's what the `json` parser does. Hence parsing a compliant JSON
-document is:
+whitespace. That's what the [`json`](#json) parser does. Hence parsing a
+compliant JSON document is:
 
     Parser.run json "…"
 
 The component parsers are also exposed. Use them as building blocks to compose a
 parser for broken JSON as you need. If you need to parse non-compliant quoted
-strings, for example, it might be best to copy just the `string` code from this
-module into your project, and use the other parsers in this module – `object`,
-`array`, and so on – to compose a new parser.
+strings, for example, it might be best to copy just the [`string`](#string) code
+from this module into your project, and use the other parsers in this module –
+[`object`](#object), [`array`](#array), and so on – to compose a new parser.
 
-For now the only exposed top-level parser is `json`.
+For now the only exposed top-level parser is [`json`](#json).
 
 [rfc7159]: https://tools.ietf.org/html/rfc7159
 
@@ -56,7 +68,7 @@ For now the only exposed top-level parser is `json`.
 
 # Parsers for objects
 
-@docs object, objectMember
+@docs object, key
 
 
 # Parsers for arrays
@@ -66,7 +78,7 @@ For now the only exposed top-level parser is `json`.
 
 # Parsers for strings
 
-@docs string, stringRaw, escape, unicodeHexCode, unescaped
+@docs string, stringLiteral, escape, unicodeHexCode, unescaped
 
 
 # Parsers for numbers
@@ -79,9 +91,9 @@ For now the only exposed top-level parser is `json`.
 @docs true, false, null, ws
 
 
-# Other functions
+# Useful functions
 
-@ hexChar, yields
+@docs hexChar, yields
 
 -}
 
@@ -111,6 +123,43 @@ import Parser
         )
 
 
+{-| Configuration for the parser.
+-}
+type Config
+    = Config
+        { json : Config -> Parser Value
+        , value : Config -> Parser Value
+        , object : Config -> Parser Value
+        , array : Config -> Parser Value
+        , key : Parser String
+        , string : Parser Value
+        , number : Parser Value
+        , true : Parser Value
+        , false : Parser Value
+        , null : Parser Value
+        , ws : Parser ()
+        }
+
+
+{-| Default configuration for the parser.
+-}
+defaultConfig : Config
+defaultConfig =
+    Config
+        { json = json
+        , value = value
+        , object = object
+        , array = array
+        , key = key
+        , string = string
+        , number = number
+        , true = true
+        , false = false
+        , null = null
+        , ws = ws
+        }
+
+
 {-| Parse the given JSON string.
 
 This assumes a spec-compliant JSON string; it will choke on "broken" JSON. This
@@ -125,7 +174,14 @@ Errors come straight from [elm/parser] and may not be super useful. Sorry.
 -}
 parse : String -> Result (List DeadEnd) Value
 parse =
-    run json
+    parseWith defaultConfig
+
+
+{-| Parse the given JSON string with a custom configuration.
+-}
+parseWith : Config -> String -> Result (List DeadEnd) Value
+parseWith ((Config c) as config) =
+    run (c.json config)
 
 
 {-| Parser for JSON.
@@ -133,26 +189,26 @@ parse =
 This is a JSON value surrounded by optional whitespace.
 
 -}
-json : Parser Value
-json =
+json : Config -> Parser Value
+json ((Config c) as config) =
     succeed identity
-        |. ws
-        |= value
-        |. ws
+        |. c.ws
+        |= c.value config
+        |. c.ws
 
 
 {-| Parser for a JSON value.
 -}
-value : Parser Value
-value =
+value : Config -> Parser Value
+value ((Config c) as config) =
     oneOf
-        [ object
-        , array
-        , string
-        , number
-        , true
-        , false
-        , null
+        [ c.object config
+        , c.array config
+        , c.string
+        , c.number
+        , c.true
+        , c.false
+        , c.null
         ]
 
 
@@ -193,15 +249,15 @@ null =
 
 {-| Parser for a JSON object.
 -}
-object : Parser Value
-object =
+object : Config -> Parser Value
+object ((Config c) as config) =
     succeed Encode.object
         |= sequence
             { start = "{"
             , separator = ","
             , end = "}"
-            , spaces = ws
-            , item = objectMember
+            , spaces = c.ws
+            , item = objectMember config
             , trailing = Forbidden
             }
 
@@ -211,57 +267,65 @@ object =
 Corresponds to the `member` production in the specifications.
 
 -}
-objectMember : Parser ( String, Value )
-objectMember =
+objectMember : Config -> Parser ( String, Value )
+objectMember ((Config c) as config) =
     succeed Tuple.pair
-        |= stringRaw
-        |. ws
+        |= c.key
+        |. c.ws
         |. symbol ":"
-        |. ws
-        |= lazy (\_ -> value)
+        |. c.ws
+        |= lazy (\_ -> c.value config)
+
+
+{-| Parser for a JSON object _key_.
+-}
+key : Parser String
+key =
+    stringLiteral
 
 
 {-| Parser for a JSON array.
 -}
-array : Parser Value
-array =
+array : Config -> Parser Value
+array ((Config c) as config) =
     succeed (Encode.list identity)
         |= sequence
             { start = "["
             , separator = ","
             , end = "]"
-            , spaces = ws
-            , item = lazy (\_ -> value)
+            , spaces = c.ws
+            , item = lazy (\_ -> c.value config)
             , trailing = Forbidden
             }
 
 
 {-| Parser for a quoted JSON string.
 
-`string` and some of its helpers have been adapted from elm/parser's
+[`string`](#string) and some of its helpers have been adapted from elm/parser's
 `DoubleQuoteString` example.
 
 -}
 string : Parser Value
 string =
-    map Encode.string stringRaw
+    map Encode.string stringLiteral
 
 
-{-| Parser for a quoted JSON string.
+{-| Parser for a quoted JSON string literal.
 
 The difference here is that this yields the actual `String` rather than a
-re-encoded `Value`.
+re-encoded `Value`. This is also used for object keys which need to be captured
+as `String`.
 
 -}
-stringRaw : Parser String
-stringRaw =
+stringLiteral : Parser String
+stringLiteral =
     succeed identity
         |. token "\""
-        |= loop [] stringHelp
+        |= loop [] stringLiteralHelp
 
 
-stringHelp : List String -> Parser (Step (List String) String)
-stringHelp revChunks =
+stringLiteralHelp : List String -> Parser (Step (List String) String)
+stringLiteralHelp revChunks =
     let
         keepGoing chunk =
             Loop <| (chunk :: revChunks)
