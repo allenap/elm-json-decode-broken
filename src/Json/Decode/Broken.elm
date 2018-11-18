@@ -281,7 +281,7 @@ objectMember ((Config c) as config) =
 -}
 key : Parser String
 key =
-    stringLiteral
+    stringLiteral unescaped escape
 
 
 {-| Parser for a JSON array.
@@ -307,25 +307,30 @@ array ((Config c) as config) =
 -}
 string : Parser Value
 string =
-    map Encode.string stringLiteral
+    map Encode.string (stringLiteral unescaped escape)
 
 
 {-| Parser for a quoted JSON string literal.
 
-The difference here is that this yields the actual `String` rather than a
-re-encoded `Value`. This is also used for object keys which need to be captured
-as `String`.
+This gives some flexibility over parsing unescaped string content and escape
+sequences. The literal must still start and end with `"`, but it's possible to
+change the rules for content to allow, for example, new-lines or carriage
+returns, or to process non-standard escape sequences.
+
+One other difference from [`string`](#string) is that this yields the actual
+`String` rather than a re-encoded `Value`. This is also used for object keys
+which need to be captured as `String`.
 
 -}
-stringLiteral : Parser String
-stringLiteral =
+stringLiteral : Parser String -> Parser Char -> Parser String
+stringLiteral parseUnescaped parseEscape =
     succeed identity
         |. token "\""
-        |= loop [] stringLiteralHelp
+        |= loop [] (stringLiteralHelp parseUnescaped parseEscape)
 
 
-stringLiteralHelp : List String -> Parser (Step (List String) String)
-stringLiteralHelp revChunks =
+stringLiteralHelp : Parser String -> Parser Char -> List String -> Parser (Step (List String) String)
+stringLiteralHelp parseUnescaped parseEscape revChunks =
     let
         keepGoing chunk =
             Loop <| (chunk :: revChunks)
@@ -336,10 +341,10 @@ stringLiteralHelp revChunks =
     oneOf
         [ succeed keepGoing
             |. token "\\"
-            |= map String.fromChar escape
+            |= map String.fromChar parseEscape
         , token "\""
             |> map endOfString
-        , unescaped
+        , parseUnescaped
             |> map keepGoing
         ]
 
@@ -426,13 +431,18 @@ carriage returns are **not** permitted; these **must** be escaped.
 unescaped : Parser String
 unescaped =
     let
-        validChar code =
+        validCode code =
             (code >= 0x5D && code <= 0x0010FFFF)
                 || (code >= 0x23 && code <= 0x5B)
                 || (code >= 0x20 && code <= 0x21)
+
+        validChar =
+            Char.toCode >> validCode
     in
-    chompWhile (Char.toCode >> validChar)
-        |> getChompedString
+    getChompedString <|
+        succeed ()
+            |. chompIf validChar
+            |. chompWhile validChar
 
 
 {-| Parser for a JSON number.

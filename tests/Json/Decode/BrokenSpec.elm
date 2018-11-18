@@ -7,6 +7,7 @@ module Json.Decode.BrokenSpec exposing
     , parseNull
     , parseNumber
     , parseObject
+    , parseRelaxedStrings
     , parseString
     , parseTrue
     )
@@ -16,7 +17,7 @@ import Fuzz
 import Json.Decode as Decode
 import Json.Decode.Broken as Broken
 import Json.Encode as Encode
-import Parser exposing (Parser)
+import Parser exposing ((|.), Parser)
 import Test exposing (..)
 
 
@@ -292,6 +293,52 @@ parseCustomNumbers =
             \_ ->
                 parseAndDecodeWith englishNumbersConfig "{\"a\": three}" (Decode.keyValuePairs Decode.float)
                     |> Expect.equal (Ok [ ( "a", 3 ) ])
+        ]
+
+
+relaxedStringUnescaped : Parser String
+relaxedStringUnescaped =
+    Parser.oneOf
+        [ Broken.unescaped
+        , Parser.symbol "\u{000D}" |> Broken.yields "\u{000D}"
+        , Parser.symbol "\n" |> Broken.yields "\n"
+        ]
+
+
+relaxedStringLiteral : Parser String
+relaxedStringLiteral =
+    Broken.stringLiteral relaxedStringUnescaped Broken.escape
+
+
+relaxedString : Parser Encode.Value
+relaxedString =
+    Parser.map Encode.string relaxedStringLiteral
+
+
+relaxedStringConfig : Broken.Config
+relaxedStringConfig =
+    case Broken.defaultConfig of
+        Broken.Config c ->
+            Broken.Config { c | string = relaxedString }
+
+
+parseRelaxedStrings : Test
+parseRelaxedStrings =
+    describe "parse 'relaxed' strings"
+        [ test "parse literal" <|
+            \_ ->
+                parseAndDecodeWith relaxedStringConfig "\"foo\u{000D}\nbar\u{000D}\n\"" Decode.string
+                    |> Expect.equal (Ok "foo\u{000D}\nbar\u{000D}\n")
+        , test "parse literal in array" <|
+            \_ ->
+                parseAndDecodeWith relaxedStringConfig "[\"foo\u{000D}\nbar\u{000D}\n\"]" (Decode.list Decode.string)
+                    |> Expect.equal (Ok [ "foo\u{000D}\nbar\u{000D}\n" ])
+        , test "parse literal in object" <|
+            \_ ->
+                parseAndDecodeWith relaxedStringConfig
+                    "{\"a\": \"foo\u{000D}\nbar\u{000D}\n\"}"
+                    (Decode.keyValuePairs Decode.string)
+                    |> Expect.equal (Ok [ ( "a", "foo\u{000D}\nbar\u{000D}\n" ) ])
         ]
 
 
