@@ -1,6 +1,7 @@
 module Json.Decode.BrokenSpec exposing
     ( decodeToRecord
     , parseArray
+    , parseCustomNumbers
     , parseFalse
     , parseNothing
     , parseNull
@@ -15,7 +16,7 @@ import Fuzz
 import Json.Decode as Decode
 import Json.Decode.Broken as Broken
 import Json.Encode as Encode
-import Parser
+import Parser exposing (Parser)
 import Test exposing (..)
 
 
@@ -234,6 +235,64 @@ decodeToRecord =
                         , eee = ()
                         }
                     )
+
+
+
+--
+-- CUSTOM PARSERS
+--
+
+
+parseAndDecodeWith : Broken.Config -> String -> Decode.Decoder a -> Result String a
+parseAndDecodeWith config json decoder =
+    case Broken.parseWith config json of
+        Ok value ->
+            Decode.decodeValue decoder value
+                |> Result.mapError Decode.errorToString
+
+        Err error ->
+            Err <| Debug.toString error
+
+
+parseDecodeAndEncodeWith : Broken.Config -> String -> Result String String
+parseDecodeAndEncodeWith config json =
+    parseAndDecodeWith config json Decode.value
+        |> Result.map (Encode.encode 0)
+
+
+englishNumbers : Parser Encode.Value
+englishNumbers =
+    Parser.map Encode.float <|
+        Parser.oneOf
+            [ Parser.token "one" |> Broken.yields 1
+            , Parser.token "two" |> Broken.yields 2
+            , Parser.token "three" |> Broken.yields 3
+            ]
+
+
+englishNumbersConfig : Broken.Config
+englishNumbersConfig =
+    case Broken.defaultConfig of
+        Broken.Config c ->
+            Broken.Config { c | number = englishNumbers }
+
+
+parseCustomNumbers : Test
+parseCustomNumbers =
+    describe "parse custom numbers"
+        [ test "parse literal 'one'" <|
+            \_ ->
+                parseAndDecodeWith englishNumbersConfig "one" Decode.float
+                    |> Expect.equal (Ok 1)
+        , test "parse literal 'two' in array" <|
+            \_ ->
+                parseAndDecodeWith englishNumbersConfig "[two]" (Decode.list Decode.float)
+                    |> Expect.equal (Ok [ 2 ])
+        , test "parse literal 'three' in object" <|
+            \_ ->
+                parseAndDecodeWith englishNumbersConfig "{\"a\": three}" (Decode.keyValuePairs Decode.float)
+                    |> Expect.equal (Ok [ ( "a", 3 ) ])
+        ]
 
 
 
