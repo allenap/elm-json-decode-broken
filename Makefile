@@ -3,6 +3,10 @@ elm-format := node_modules/.bin/elm-format
 elm-test := node_modules/.bin/elm-test
 
 
+.PHONY: default
+default: build test
+
+
 .PHONY: test
 test: $(elm-test)
 	$(elm-test)
