@@ -1,11 +1,13 @@
 module Json.Decode.BrokenSpec exposing
     ( decodeToRecord
     , parseArray
+    , parseCustomNumbers
     , parseFalse
     , parseNothing
     , parseNull
     , parseNumber
     , parseObject
+    , parseRelaxedStrings
     , parseString
     , parseTrue
     )
@@ -15,7 +17,7 @@ import Fuzz
 import Json.Decode as Decode
 import Json.Decode.Broken as Broken
 import Json.Encode as Encode
-import Parser
+import Parser exposing ((|.), Parser)
 import Test exposing (..)
 
 
@@ -234,6 +236,110 @@ decodeToRecord =
                         , eee = ()
                         }
                     )
+
+
+
+--
+-- CUSTOM PARSERS
+--
+
+
+parseAndDecodeWith : Broken.Config -> String -> Decode.Decoder a -> Result String a
+parseAndDecodeWith config json decoder =
+    case Broken.parseWith config json of
+        Ok value ->
+            Decode.decodeValue decoder value
+                |> Result.mapError Decode.errorToString
+
+        Err error ->
+            Err <| Debug.toString error
+
+
+parseDecodeAndEncodeWith : Broken.Config -> String -> Result String String
+parseDecodeAndEncodeWith config json =
+    parseAndDecodeWith config json Decode.value
+        |> Result.map (Encode.encode 0)
+
+
+englishNumbers : Parser Encode.Value
+englishNumbers =
+    Parser.map Encode.float <|
+        Parser.oneOf
+            [ Parser.token "one" |> Broken.yields 1
+            , Parser.token "two" |> Broken.yields 2
+            , Parser.token "three" |> Broken.yields 3
+            ]
+
+
+englishNumbersConfig : Broken.Config
+englishNumbersConfig =
+    case Broken.defaultConfig of
+        Broken.Config c ->
+            Broken.Config { c | number = englishNumbers }
+
+
+parseCustomNumbers : Test
+parseCustomNumbers =
+    describe "parse custom numbers"
+        [ test "parse literal 'one'" <|
+            \_ ->
+                parseAndDecodeWith englishNumbersConfig "one" Decode.float
+                    |> Expect.equal (Ok 1)
+        , test "parse literal 'two' in array" <|
+            \_ ->
+                parseAndDecodeWith englishNumbersConfig "[two]" (Decode.list Decode.float)
+                    |> Expect.equal (Ok [ 2 ])
+        , test "parse literal 'three' in object" <|
+            \_ ->
+                parseAndDecodeWith englishNumbersConfig "{\"a\": three}" (Decode.keyValuePairs Decode.float)
+                    |> Expect.equal (Ok [ ( "a", 3 ) ])
+        ]
+
+
+relaxedStringUnescaped : Parser String
+relaxedStringUnescaped =
+    Parser.oneOf
+        [ Broken.unescaped
+        , Parser.symbol "\u{000D}" |> Broken.yields "\u{000D}"
+        , Parser.symbol "\n" |> Broken.yields "\n"
+        ]
+
+
+relaxedStringLiteral : Parser String
+relaxedStringLiteral =
+    Broken.stringLiteral relaxedStringUnescaped Broken.escape
+
+
+relaxedString : Parser Encode.Value
+relaxedString =
+    Parser.map Encode.string relaxedStringLiteral
+
+
+relaxedStringConfig : Broken.Config
+relaxedStringConfig =
+    case Broken.defaultConfig of
+        Broken.Config c ->
+            Broken.Config { c | string = relaxedString }
+
+
+parseRelaxedStrings : Test
+parseRelaxedStrings =
+    describe "parse 'relaxed' strings"
+        [ test "parse literal" <|
+            \_ ->
+                parseAndDecodeWith relaxedStringConfig "\"foo\u{000D}\nbar\u{000D}\n\"" Decode.string
+                    |> Expect.equal (Ok "foo\u{000D}\nbar\u{000D}\n")
+        , test "parse literal in array" <|
+            \_ ->
+                parseAndDecodeWith relaxedStringConfig "[\"foo\u{000D}\nbar\u{000D}\n\"]" (Decode.list Decode.string)
+                    |> Expect.equal (Ok [ "foo\u{000D}\nbar\u{000D}\n" ])
+        , test "parse literal in object" <|
+            \_ ->
+                parseAndDecodeWith relaxedStringConfig
+                    "{\"a\": \"foo\u{000D}\nbar\u{000D}\n\"}"
+                    (Decode.keyValuePairs Decode.string)
+                    |> Expect.equal (Ok [ ( "a", "foo\u{000D}\nbar\u{000D}\n" ) ])
+        ]
 
 
 
