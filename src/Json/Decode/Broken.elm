@@ -42,24 +42,33 @@ or nested within any depths of objects or arrays.
 
 # Top-level parsers
 
-A parser for a JSON _value_ is:
+Using this module, a strict parser for a JSON _value_ is defined by:
 
-    Parser.oneOf [ object, array, string, number, true, false, null ]
+    Parser.oneOf
+        [ object defaultConfig
+        , array defaultConfig
+        , string
+        , number
+        , true
+        , false
+        , null
+        ]
 
 According to the [specification][rfc7159], a JSON document is: optional
 whitespace, a JSON value (that `oneOf …` expression above), then more optional
 whitespace. That's what the [`json`](#json) parser does. Hence parsing a
 compliant JSON document is:
 
-    Parser.run json "…"
+    Parser.run (json defaultConfig) "…"
 
-The component parsers are also exposed. Use them as building blocks to compose a
-parser for broken JSON as you need. If you need to parse non-compliant quoted
-strings, for example, it might be best to copy just the [`string`](#string) code
-from this module into your project, and use the other parsers in this module –
-[`object`](#object), [`array`](#array), and so on – to compose a new parser.
-
-For now the only exposed top-level parser is [`json`](#json).
+Those component parsers are also exposed, as are several other sub-parsers. Use
+them as building blocks to compose a parser for broken JSON as you need. If you
+need to parse non-compliant quoted strings, for example, you might start by
+looking at [`stringLiteral`](#stringLiteral). It might even be best to copy just
+the [`string`](#string) code from this module into your project, and use the
+other parsers in this module – [`object`](#object), [`array`](#array), and so on
+– to compose a new parser by creating a new [`Config`](#Config) or deriving from
+[`defaultConfig`](#defaultConfig).
 
 [rfc7159]: https://tools.ietf.org/html/rfc7159
 
@@ -167,7 +176,8 @@ seems kind of weird for a package that's all about parsing broken JSON. However,
 we all have to start somewhere. Read the code, copy it, modify it, make it work
 for your use case.
 
-Errors come straight from [elm/parser] and may not be super useful. Sorry.
+Errors come straight from [elm/parser] and may not be super useful. Sorry. I may
+switch to elm/parser's `Parser.Advanced` to improve this at some point.
 
 [elm/parser]: https://package.elm-lang.org/packages/elm/parser/latest/
 
@@ -212,13 +222,13 @@ value ((Config c) as config) =
         ]
 
 
-{-| Parser that, on succees, always returns `a`
+{-| Parser that, on success, always returns `a`
 
 For example:
 
     token "true" |> yields (Encode.bool True)
 
-When the token "true" is matched, a boolean true value is yielded
+When the token `true` is matched, a boolean true value is yielded.
 
 -}
 yields : a -> Parser b -> Parser a
@@ -226,21 +236,21 @@ yields =
     always >> map
 
 
-{-| Parser for a JSON 'true' literal.
+{-| Parser for a JSON `true` literal.
 -}
 true : Parser Value
 true =
     token "true" |> yields (Encode.bool True)
 
 
-{-| Parser for a JSON 'false' literal.
+{-| Parser for a JSON `false` literal.
 -}
 false : Parser Value
 false =
     token "false" |> yields (Encode.bool False)
 
 
-{-| Parser for a JSON 'null' literal.
+{-| Parser for a JSON `null` literal.
 -}
 null : Parser Value
 null =
