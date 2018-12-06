@@ -9,13 +9,13 @@ Sometimes a 3rd party publishes or gives you some slightly broken JSON. Newlines
 proper JSON parser will rightly complain that it's broken, but you still need to
 get stuff done.
 
-This package will allow you to compose a custom parser that allows for weirdness
-in the JSON you have to work with. I say *will* because right now it's just a
-specification compliant parser, albeit implemented in Elm using [elm/parser][].
-There's not yet the facility for composing a custom parser, though the pieces
-are there, and it's easier than you might imagine; credit to elm/parser.
+This package allows you to compose a custom parser that allows for weirdness in
+the JSON you have to work with. Check out the tests for an example of how to do
+that. Without customisation it's a specification compliant parser, implemented
+in Elm using [elm/parser][].
 
-One option open to you is to take the code as it stands, copy-and-paste it into
+If the customisation hooks are not enough or you find them unwieldy there's
+another option open to you: take the code as it stands, copy-and-paste it into
 your project, change it to work with the broken JSON you're forced to deal with,
 and go from there. Sure, you won't get bug fixes and you'll have to maintain it
 yourself, but that's in the spirit of this package: get your work done, move on.
